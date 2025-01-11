@@ -13,10 +13,10 @@ CREATE POLICY "Users can insert their own profile"
   ON "users"
   FOR INSERT
   TO authenticated
-  USING (auth.uid() = id);
+  WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Users can update their own profile"
-  ON "users "
+  ON "users"
   FOR UPDATE
   TO authenticated
   USING (auth.uid() = id);
