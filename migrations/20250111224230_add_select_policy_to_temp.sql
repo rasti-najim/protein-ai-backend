@@ -1,4 +1,6 @@
-CREATE POLICY "Select temp" ON storage.objects
-FOR SELECT
-TO authenticated
-USING (auth.uid() = storage.owner(object_id));
+create policy "Allow authenticated select from temp bucket"
+on storage.objects for select
+to authenticated
+using (
+    bucket_id = 'temp'
+);
