@@ -11,15 +11,48 @@ const ResponseSchema = z.object({
 });
 
 Deno.serve(async (req) => {
-  const { imageUrl } = await req.json()
+  const authHeader = req.headers.get("Authorization")!;
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    { global: { headers: { Authorization: authHeader } } }
+  );
+
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      }
+    }
+  )
+
+  try {
+    const { imagePath, createdAt } = await req.json()
   const apiKey = Deno.env.get('OPENAI_API_KEY')
   const openai = new OpenAI({
     apiKey: apiKey,
   })
 
-  try {
+  const { data: { signedUrl }, error: signedUrlError } = await supabase
+  .storage
+  .from('temp')
+  .createSignedUrl(imagePath, 3600)
+
+  if (signedUrlError) {
+    console.error(signedUrlError);
+    return new Response(JSON.stringify({ error: "Failed to get signed URL" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+
     const response = await openai.beta.chat.completions.parse({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
@@ -43,7 +76,7 @@ You have access to an image that the user is providing. You are to analyze it st
             {
               type: "image_url",
               image_url: {
-                "url": imageUrl,
+                "url": signedUrl,
               },
             },
           ],
@@ -51,6 +84,24 @@ You have access to an image that the user is providing. You are to analyze it st
       ],
       response_format: zodResponseFormat(ResponseSchema, "response"),
     });
+
+    console.log(response.choices[0].message.parsed);
+
+    const { data, error } = await supabaseAdmin.storage.from("temp").remove([imagePath]);
+
+    if (error) {
+      console.error(error);
+      return new Response(JSON.stringify({ error: "Failed to remove image" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+  return new Response(
+    JSON.stringify(response.choices[0].message.parsed),
+    { headers: { "Content-Type": "application/json" } },
+    )
+
   } catch (error) {
     console.error(error);
     return new Response(JSON.stringify({ error: "Failed to scan photo" }), {
@@ -59,10 +110,4 @@ You have access to an image that the user is providing. You are to analyze it st
     });
   }
 
-  console.log(response.choices[0].message.parsed);
-
-  return new Response(
-    JSON.stringify(response.choices[0].message.parsed),
-    { headers: { "Content-Type": "application/json" } },
-  )
 })
