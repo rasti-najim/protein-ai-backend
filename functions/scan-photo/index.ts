@@ -36,6 +36,8 @@ Deno.serve(async (req) => {
   const openai = new OpenAI({
     apiKey: apiKey,
   })
+  const token = authHeader.replace("Bearer ", "");
+    const { data: { user } } = await supabase.auth.getUser(token);
 
   const { data: { signedUrl }, error: signedUrlError } = await supabase
   .storage
@@ -92,6 +94,21 @@ You have access to an image that the user is providing. You are to analyze it st
     if (error) {
       console.error(error);
       return new Response(JSON.stringify({ error: "Failed to remove image" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const {error: insertError} = await supabase.from("meals").insert({
+      name: response.choices[0].message.parsed.meal_name,
+      protein_amount: response.choices[0].message.parsed.protein_g,
+      created_at: createdAt,
+      user_id: user.id,
+    })
+
+    if (insertError) {
+      console.error(insertError);
+      return new Response(JSON.stringify({ error: "Failed to insert meal" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
