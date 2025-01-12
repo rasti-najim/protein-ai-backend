@@ -52,5 +52,5 @@ END;
 $$;
 
 -- Add helpful indexes
-CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, meal_date);
-CREATE INDEX IF NOT EXISTS idx_user_streaks_user ON user_streaks(user_id);
+CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_user_streaks_user ON streaks(user_id);
