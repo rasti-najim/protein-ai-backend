@@ -19,4 +19,4 @@ SELECT
     ORDER BY sl.threshold DESC
     LIMIT 1
   ) AS streak_emoji
-FROM user_streaks us;
+FROM streaks us;
