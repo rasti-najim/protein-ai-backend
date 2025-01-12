@@ -17,22 +17,22 @@ BEGIN
   SET
     current_streak = CASE
       WHEN COALESCE(dt.total_protein, 0) >= COALESCE(u.daily_target, 0)
-        AND us.last_streak_date = CURRENT_DATE - 1
+        AND us.updated_at = CURRENT_DATE - 1
       THEN us.current_streak + 1
       WHEN COALESCE(dt.total_protein, 0) >= COALESCE(u.daily_target, 0)
       THEN 1
       ELSE 0
     END,
-    last_streak_date = CASE
+    updated_at = CASE
       WHEN COALESCE(dt.total_protein, 0) >= COALESCE(u.daily_target, 0)
       THEN CURRENT_DATE
-      ELSE us.last_streak_date
+      ELSE us.updated_at
     END,
     max_streak = GREATEST(
       us.max_streak,
       CASE
         WHEN COALESCE(dt.total_protein, 0) >= COALESCE(u.daily_target, 0)
-          AND us.last_streak_date = CURRENT_DATE - 1
+          AND us.updated_at = CURRENT_DATE - 1
         THEN us.current_streak + 1
         WHEN COALESCE(dt.total_protein, 0) >= COALESCE(u.daily_target, 0)
         THEN 1
