@@ -1,7 +1,10 @@
--- Drop the old streaks table
+-- Drop the view first since it depends on the streaks table
+DROP VIEW IF EXISTS user_streak_view;
+
+-- Now we can safely drop the streaks table
 DROP TABLE IF EXISTS streaks;
 
--- Update the user_streak_view to calculate streaks directly from meals
+-- Create the new view that calculates streaks directly from meals
 CREATE OR REPLACE VIEW user_streak_view AS
 WITH daily_totals AS (
   SELECT 
@@ -51,3 +54,6 @@ SELECT
 FROM daily_totals dt
 LEFT JOIN streak_calc sc ON sc.user_id = dt.user_id
 GROUP BY dt.user_id;
+
+-- Add helpful index for performance
+CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, created_at);
