@@ -7,6 +7,7 @@ import { zodResponseFormat } from "npm:openai/helpers/zod";
 const ResponseSchema = z.object({
   meal_name: z.string(),
   protein_g: z.number(),
+  not_a_meal: z.boolean().optional(),
   // explanation: z.string().optional(),
 });
 
@@ -63,6 +64,8 @@ Deno.serve(async (req) => {
 
 1. **Meal Identification**: Identify or name the meal as accurately as possible based on the visual features.
 2. **Protein Estimation**: Estimate the grams of protein in the meal. Provide a numeric value (for example, 25 grams).
+3. **Not a Meal**: If the image is not a meal, set the "not_a_meal" field to true.
+
 
 You have access to an image that the user is providing. You are to analyze it strictly under these guidelines.
 ` },
@@ -74,6 +77,7 @@ You have access to an image that the user is providing. You are to analyze it st
             { type: "text", text: `Please analyze the attached image of my meal and respond in JSON with the following fields:
 - "meal_name": The name or best guess of the dish.
 - "protein_g": The approximate grams of protein in this meal (numeric value).
+- "not_a_meal": If the image is not a meal, set this to true.
 ` },
             {
               type: "image_url",
@@ -99,24 +103,26 @@ You have access to an image that the user is providing. You are to analyze it st
       });
     }
 
-    const {error: insertError} = await supabase.from("meals").insert({
-      name: response.choices[0].message.parsed.meal_name,
-      protein_amount: response.choices[0].message.parsed.protein_g,
-      created_at: createdAt,
-      user_id: user.id,
-    })
+    if (!response.choices[0].message.parsed.not_a_meal) {
+      const {error: insertError} = await supabase.from("meals").insert({
+        name: response.choices[0].message.parsed.meal_name,
+        protein_amount: response.choices[0].message.parsed.protein_g,
+        created_at: createdAt,
+        user_id: user.id,
+      })
 
-    if (insertError) {
-      console.error(insertError);
-      return new Response(JSON.stringify({ error: "Failed to insert meal" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      if (insertError) {
+        console.error(insertError);
+        return new Response(JSON.stringify({ error: "Failed to insert meal" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
     }
 
-  return new Response(
-    JSON.stringify(response.choices[0].message.parsed),
-    { headers: { "Content-Type": "application/json" } },
+    return new Response(
+      JSON.stringify(response.choices[0].message.parsed),
+      { headers: { "Content-Type": "application/json" } },
     )
 
   } catch (error) {
