@@ -27,10 +27,11 @@ streak_calc AS (
     COUNT(*) FILTER (WHERE total_protein >= daily_protein_target) 
       OVER (PARTITION BY user_id ORDER BY date) as current_streak
   FROM daily_totals
+  WHERE date < CURRENT_DATE  -- Only count completed days
 )
 SELECT 
   dt.user_id,
-  COALESCE(MAX(sc.current_streak) FILTER (WHERE sc.date = CURRENT_DATE), 0) as current_streak,
+  COALESCE(MAX(sc.current_streak), 0) as current_streak,
   COALESCE(MAX(sc.current_streak), 0) as max_streak,
   (
     SELECT sl.name
