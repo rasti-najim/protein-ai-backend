@@ -2,9 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js";
 import OpenAI from "jsr:@openai/openai";
 import { z } from "jsr:@zod/zod";
-import { TrophyApiClient } from "npm:@trophyso/node";
-
-const trophy = new TrophyApiClient({ apiKey: Deno.env.get("TROPHY_API_KEY")! });
 
 const ResponseSchema = z.object({
   meal_name: z.string(),
@@ -117,6 +114,7 @@ Deno.serve(async (req) => {
         protein_amount: resultData.protein_g,
         created_at: createdAt,
         user_id: user.id,
+        logging_method: 'photo_scan',
       });
 
       if (insertError) {
@@ -131,22 +129,28 @@ Deno.serve(async (req) => {
       }
     }
 
-    const result = await trophy.metrics.event("protein-grams", {
-      user: {
-        id: user.id,
-        email: user.email,
-        tz: user.user_metadata.timezone,
-      },
-      value: resultData.protein_g,
-    });
+    // Update user streak using our simple streak system
+    const { data: streakResult, error: streakError } = await supabase
+      .rpc('update_user_streak', { target_user_id: user.id });
 
-    console.log(result);
+    if (streakError) {
+      console.error('Streak calculation error:', streakError);
+      // Don't fail the request if streak calculation fails
+    }
+
+    const result = streakResult?.[0] || {
+      current_streak: 0,
+      streak_extended: false
+    };
+
+    console.log('Streak result:', result);
 
     return new Response(
       JSON.stringify({
         ...resultData,
-        currentStreak: result.currentStreak.length,
-        streakExtended: result.currentStreak.extended,
+        currentStreak: result.current_streak,
+        streakExtended: result.streak_extended,
+        goalMetToday: result.goal_met_today,
       }),
       {
         headers: { "Content-Type": "application/json" },
