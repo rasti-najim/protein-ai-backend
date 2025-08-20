@@ -1,14 +1,15 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-import { createClient } from "npm:@supabase/supabase-js";
-import OpenAI from "npm:openai";
-import { z } from "npm:zod";
-import { zodResponseFormat } from "npm:openai/helpers/zod";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js";
+import OpenAI from "jsr:@openai/openai";
+import { z } from "jsr:@zod/zod";
+import { TrophyApiClient } from "npm:@trophyso/node";
+
+const trophy = new TrophyApiClient({ apiKey: Deno.env.get("TROPHY_API_KEY")! });
 
 const ResponseSchema = z.object({
   meal_name: z.string(),
   protein_g: z.number(),
   not_a_meal: z.boolean().optional(),
-  // explanation: z.string().optional(),
 });
 
 Deno.serve(async (req) => {
@@ -21,79 +22,86 @@ Deno.serve(async (req) => {
   );
 
   const supabaseAdmin = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
-      }
+      },
     }
-  )
+  );
 
   try {
-    const { imagePath, createdAt } = await req.json()
-  const apiKey = Deno.env.get('OPENAI_API_KEY')
-  const openai = new OpenAI({
-    apiKey: apiKey,
-  })
-  const token = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await supabase.auth.getUser(token);
-
-  const { data: { signedUrl }, error: signedUrlError } = await supabase
-  .storage
-  .from('temp')
-  .createSignedUrl(imagePath, 3600)
-
-  if (signedUrlError) {
-    console.error(signedUrlError);
-    return new Response(JSON.stringify({ error: "Failed to get signed URL" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+    const { imagePath, createdAt } = await req.json();
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const openai = new OpenAI({
+      apiKey: apiKey,
     });
-  }
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+    } = await supabase.auth.getUser(token);
 
+    const {
+      data: { signedUrl },
+      error: signedUrlError,
+    } = await supabase.storage.from("temp").createSignedUrl(imagePath, 3600);
 
-    const response = await openai.beta.chat.completions.parse({
-      model: "gpt-4o",
-      messages: [
+    if (signedUrlError) {
+      console.error(signedUrlError);
+      return new Response(
+        JSON.stringify({ error: "Failed to get signed URL" }),
         {
-          role: "system",
-          content: [
-            { type: "text", text: `You are a helpful AI assistant capable of analyzing images to identify meals and estimate their protein content. Please follow these rules:
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
 
-1. **Meal Identification**: Identify or name the meal as accurately as possible based on the visual features.
-2. **Protein Estimation**: Estimate the grams of protein in the meal. Provide a numeric value (for example, 25 grams).
-3. **Not a Meal**: If the image is not a meal, set the "not_a_meal" field to true.
-
-
-You have access to an image that the user is providing. You are to analyze it strictly under these guidelines.
-` },
-          ],
-        },
+    const response = await openai.responses.create({
+      model: "gpt-5",
+      prompt: {
+        id: "pmpt_68a51bada3f48194a257c25f203098230279aa2bdc3e9c4d",
+      },
+      input: [
         {
           role: "user",
           content: [
-            { type: "text", text: `Please analyze the attached image of my meal and respond in JSON with the following fields:
-- "meal_name": The name or best guess of the dish.
-- "protein_g": The approximate grams of protein in this meal (numeric value).
-- "not_a_meal": If the image is not a meal, set this to true.
-` },
             {
-              type: "image_url",
-              image_url: {
-                "url": signedUrl,
-              },
+              type: "input_image",
+              image_url: signedUrl,
             },
           ],
         },
       ],
-      response_format: zodResponseFormat(ResponseSchema, "response"),
     });
 
-    console.log(response.choices[0].message.parsed);
+    // Parse and validate model output
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(response.output_text);
+    } catch (_) {
+      return new Response(
+        JSON.stringify({ error: "Model output was not valid JSON" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const parsedResult = ResponseSchema.safeParse(parsed);
+    if (!parsedResult.success) {
+      return new Response(
+        JSON.stringify({
+          error: "Model output failed validation",
+          issues: parsedResult.error.issues,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const resultData = parsedResult.data;
 
-    const { data, error } = await supabaseAdmin.storage.from("temp").remove([imagePath]);
+    const { data, error } = await supabaseAdmin.storage
+      .from("temp")
+      .remove([imagePath]);
 
     if (error) {
       console.error(error);
@@ -103,28 +111,47 @@ You have access to an image that the user is providing. You are to analyze it st
       });
     }
 
-    if (!response.choices[0].message.parsed.not_a_meal) {
-      const {error: insertError} = await supabase.from("meals").insert({
-        name: response.choices[0].message.parsed.meal_name,
-        protein_amount: response.choices[0].message.parsed.protein_g,
+    if (!resultData.not_a_meal) {
+      const { error: insertError } = await supabase.from("meals").insert({
+        name: resultData.meal_name,
+        protein_amount: resultData.protein_g,
         created_at: createdAt,
         user_id: user.id,
-      })
+      });
 
       if (insertError) {
         console.error(insertError);
-        return new Response(JSON.stringify({ error: "Failed to insert meal" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Failed to insert meal" }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
     }
 
-    return new Response(
-      JSON.stringify(response.choices[0].message.parsed),
-      { headers: { "Content-Type": "application/json" } },
-    )
+    const result = await trophy.metrics.event("protein-grams", {
+      user: {
+        id: user.id,
+        email: user.email,
+        tz: user.user_metadata.timezone,
+      },
+      value: resultData.protein_g,
+    });
 
+    console.log(result);
+
+    return new Response(
+      JSON.stringify({
+        ...resultData,
+        currentStreak: result.currentStreak.length,
+        streakExtended: result.currentStreak.extended,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error(error);
     return new Response(JSON.stringify({ error: "Failed to scan photo" }), {
@@ -132,5 +159,4 @@ You have access to an image that the user is providing. You are to analyze it st
       headers: { "Content-Type": "application/json" },
     });
   }
-
-})
+});

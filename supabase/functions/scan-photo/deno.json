@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "@trophyso/node": "npm:@trophyso/node"
+  }
+}
