@@ -200,5 +200,5 @@ supabase functions deploy
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/rasti-najim">Rasti Najim</a>
+  Built by <a href="https://github.com/rasti-najim">Rasti Aldawoodi</a>
 </p>
